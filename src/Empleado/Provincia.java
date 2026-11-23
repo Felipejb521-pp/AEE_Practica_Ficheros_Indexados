@@ -1,7 +1,7 @@
 package Empleado;
 
 /**
- * @author Álvaro López De San Román
+ * @author Equipo 3
  */
 public enum Provincia {
 
@@ -31,13 +31,22 @@ public enum Provincia {
     }
 
     public static Provincia fromCodigo(byte codigo) {
-        for (int i = 0; i < values().length; i++) {
+        Provincia encontrado = null;
+        int i = 0;
+
+        // Se recorre hasta encontrar el código o acabar los valores
+        while (encontrado == null && i < values().length) {
             if (values()[i].codigo == codigo) {
-                return values()[i];
+                encontrado = values()[i];
             }
+            i++;
         }
 
-        throw new IllegalArgumentException(
-                "La provincia debe estar entre 1 y 8.");
+        if (encontrado == null) {
+            throw new IllegalArgumentException(
+                    "La provincia debe estar entre 1 y 8.");
+        }
+
+        return encontrado;
     }
 }

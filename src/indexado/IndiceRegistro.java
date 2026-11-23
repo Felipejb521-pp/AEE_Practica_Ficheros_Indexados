@@ -2,7 +2,7 @@ package indexado;
 
 /**
  *
- * @author Antonio Muñoz Herrera
+ * @author Equipo 3
  */
 
 public class IndiceRegistro {

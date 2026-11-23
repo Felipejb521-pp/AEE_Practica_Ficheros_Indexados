@@ -5,7 +5,7 @@ import java.util.Calendar;
 import java.util.GregorianCalendar;
 
 /**
- * @author Álvaro López De San Román
+ * @author Equipo 3
  */
 public class Fecha implements Serializable {
 
@@ -105,15 +105,17 @@ public class Fecha implements Serializable {
     }
 
     public boolean esPosteriorA(Fecha otra) {
+        boolean posterior;
+
         if (this.anio != otra.anio) {
-            return this.anio > otra.anio;
+            posterior = this.anio > otra.anio;
+        } else if (this.mes != otra.mes) {
+            posterior = this.mes > otra.mes;
+        } else {
+            posterior = this.dia > otra.dia;
         }
 
-        if (this.mes != otra.mes) {
-            return this.mes > otra.mes;
-        }
-
-        return this.dia > otra.dia;
+        return posterior;
     }
 
     public byte getDia() {

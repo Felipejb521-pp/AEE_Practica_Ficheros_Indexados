@@ -1,7 +1,7 @@
 package Empleado;
 
 /**
- * @author Álvaro López De San Román
+ * @author Equipo 3
  */
 public enum TipoEmpleado {
 
@@ -28,13 +28,22 @@ public enum TipoEmpleado {
     public static TipoEmpleado fromCodigo(char codigo) {
         char mayuscula = Character.toUpperCase(codigo);
 
-        for (int i = 0; i < values().length; i++) {
+        TipoEmpleado encontrado = null;
+        int i = 0;
+
+        // Se recorre hasta encontrar el código o acabar los valores
+        while (encontrado == null && i < values().length) {
             if (values()[i].codigo == mayuscula) {
-                return values()[i];
+                encontrado = values()[i];
             }
+            i++;
         }
 
-        throw new IllegalArgumentException(
-                "El tipo debe ser F, D o C.");
+        if (encontrado == null) {
+            throw new IllegalArgumentException(
+                    "El tipo debe ser F, D o C.");
+        }
+
+        return encontrado;
     }
 }

@@ -1,4 +1,3 @@
-
 package indexado;
 
 import java.io.ByteArrayInputStream;
@@ -10,39 +9,39 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.RandomAccessFile;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.TreeSet;
+
 /**
- *
- * @author Antonio Muñoz Herrera
+ * 
+ * 
+ * @author Equipo 3
  */
 public class FicheroIndexado {
-    
-// Tamaño fijo reservado por registro en el fichero de datos (en bytes)
-    private static final int TAMANO_BLOQUE_DATOS = 512;
+
+    private static final int TAMANO_BLOQUE_DATOS = 1024;
 
     private File ficheroDatos;
     private IndiceDAO indices;
-    private TreeMap indice;
+
+    private RandomAccessFile recorrido;
+    private boolean recorridoOrdenado;
+    private long siguientePosicionFisica;
+    private long siguienteEntrada;
+    private long entradasRestantes;
 
     public FicheroIndexado(File ficheroDatos, File ficheroIndice) {
         this.ficheroDatos = ficheroDatos;
         this.indices = new IndiceDAO(ficheroIndice);
-        this.indice = this.indices.leer();
 
-        if (this.indice.isEmpty() && ficheroDatos != null && ficheroDatos.exists() && ficheroDatos.length() > 0) {
-            reconstruirIndice();
-        }
+        reconstruirIndice();
     }
 
-    public void reconstruirIndice() {
-        indice.clear();
+    public int reconstruirIndice() {
+        int incidencias = 0;
         RandomAccessFile raf = null;
+
+        indices.vaciar();
 
         if (ficheroDatos != null && ficheroDatos.exists()) {
             try {
@@ -50,61 +49,83 @@ public class FicheroIndexado {
                 long longitudTotal = raf.length();
                 long posicionActual = 0;
 
+                if (longitudTotal % TAMANO_BLOQUE_DATOS != 0) {
+                    System.err.println("Aviso: la longitud de " + ficheroDatos.getName()
+                            + " no es múltiplo de " + TAMANO_BLOQUE_DATOS + " bytes.");
+                    incidencias++;
+                }
+
                 while (posicionActual + TAMANO_BLOQUE_DATOS <= longitudTotal) {
                     raf.seek(posicionActual);
                     byte[] bloque = new byte[TAMANO_BLOQUE_DATOS];
                     raf.readFully(bloque);
 
-                    ByteArrayInputStream bais = new ByteArrayInputStream(bloque);
-                    DataInputStream dis = new DataInputStream(bais);
+                    if (bloqueActivo(bloque)) {
+                        Comparable clave = claveDelBloque(bloque);
 
-                    boolean activo = dis.readBoolean();
-                    if (activo) {
-                        Comparable clave = leerClaveDeFlujo(dis);
-                        if (clave != null) {
-                            indice.put(clave, new Long(posicionActual));
+                        if (clave == null) {
+                            System.err.println("Aviso: clave no válida en la posición " + posicionActual + ".");
+                            incidencias++;
+                        } else if (desempaquetarRegistro(bloque) == null) {
+                            System.err.println("Aviso: registro ilegible en la posición " + posicionActual + ".");
+                            incidencias++;
+                        } else if (!indices.insertar(clave, posicionActual)) {
+                            System.err.println("Aviso: clave repetida o que no cabe en el índice ["
+                                    + clave + "] en la posición " + posicionActual + ".");
+                            incidencias++;
                         }
                     }
 
-                    dis.close();
-                    bais.close();
                     posicionActual = posicionActual + TAMANO_BLOQUE_DATOS;
                 }
 
                 raf.close();
-                indices.guardar(indice);
             } catch (IOException e) {
                 System.err.println("Error al reconstruir el índice desde " + ficheroDatos.getName() + ": " + e.getMessage());
                 cerrarRaf(raf);
+                incidencias++;
             }
         }
+
+        return incidencias;
     }
 
     public boolean alta(Comparable clave, Object registro) {
         boolean insertado = false;
         RandomAccessFile raf = null;
+        long posicionInsercion = -1;
 
-        if (clave != null && registro != null && !indice.containsKey(clave)) {
-            try {
+        if (clave != null && registro != null && estructuraDatosValida() && indices.admiteClave(clave)) {
+            if (indices.buscar(clave) >= 0) {
+                System.err.println("Aviso: Ya existe un registro con la clave [" + clave + "].");
+            } else {
                 byte[] bloque = empaquetarRegistro(true, clave, registro);
+
                 if (bloque != null) {
-                    raf = new RandomAccessFile(ficheroDatos, "rw");
-                    long posicionInsercion = raf.length();
+                    try {
+                        raf = new RandomAccessFile(ficheroDatos, "rw");
+                        posicionInsercion = raf.length();
 
-                    raf.seek(posicionInsercion);
-                    raf.write(bloque);
-                    raf.close();
+                        raf.seek(posicionInsercion);
+                        raf.write(bloque);
+                        raf.close();
 
-                    indice.put(clave, new Long(posicionInsercion));
-                    indices.guardar(indice);
-                    insertado = true;
+                        insertado = indices.insertar(clave, posicionInsercion);
+
+                        if (!insertado) {
+                            System.err.println("Error: no se pudo guardar el índice en el alta de [" + clave + "].");
+                            deshacerAlta(posicionInsercion);
+                        }
+                    } catch (IOException e) {
+                        System.err.println("Error al dar de alta el registro con clave [" + clave + "]: " + e.getMessage());
+                        cerrarRaf(raf);
+
+                        if (posicionInsercion >= 0) {
+                            deshacerAlta(posicionInsercion);
+                        }
+                    }
                 }
-            } catch (IOException e) {
-                System.err.println("Error al dar de alta el registro con clave [" + clave + "]: " + e.getMessage());
-                cerrarRaf(raf);
             }
-        } else if (clave != null && indice.containsKey(clave)) {
-            System.err.println("Aviso: Ya existe un registro con la clave [" + clave + "].");
         }
 
         return insertado;
@@ -113,23 +134,30 @@ public class FicheroIndexado {
     public boolean baja(Comparable clave) {
         boolean eliminado = false;
         RandomAccessFile raf = null;
+        long posicion = posicionar(clave);
 
-        if (clave != null && indice.containsKey(clave)) {
-            long posicion = posicionar(clave);
-            if (posicion >= 0) {
+        if (posicion >= 0) {
+            byte[] bloque = leerBloque(posicion);
+
+            if (bloque != null && bloqueCoincideConClave(bloque, clave)) {
                 try {
                     raf = new RandomAccessFile(ficheroDatos, "rw");
                     raf.seek(posicion);
                     raf.writeBoolean(false);
                     raf.close();
 
-                    indice.remove(clave);
-                    indices.guardar(indice);
-                    eliminado = true;
+                    eliminado = indices.eliminar(clave);
+
+                    if (!eliminado) {
+                        System.err.println("Error: no se pudo guardar el índice en la baja de [" + clave + "].");
+                        deshacerBaja(posicion);
+                    }
                 } catch (IOException e) {
                     System.err.println("Error al dar de baja el registro con clave [" + clave + "]: " + e.getMessage());
                     cerrarRaf(raf);
                 }
+            } else if (bloque != null) {
+                System.err.println("Error: la clave del bloque no coincide con la del índice [" + clave + "].");
             }
         }
 
@@ -139,10 +167,12 @@ public class FicheroIndexado {
     public boolean modificar(Comparable clave, Object registro) {
         boolean modificado = false;
         RandomAccessFile raf = null;
+        long posicion = posicionar(clave);
 
-        if (clave != null && registro != null && indice.containsKey(clave)) {
-            long posicion = posicionar(clave);
-            if (posicion >= 0) {
+        if (registro != null && posicion >= 0) {
+            byte[] actual = leerBloque(posicion);
+
+            if (actual != null && bloqueCoincideConClave(actual, clave)) {
                 try {
                     byte[] bloque = empaquetarRegistro(true, clave, registro);
                     if (bloque != null) {
@@ -156,6 +186,8 @@ public class FicheroIndexado {
                     System.err.println("Error al modificar el registro con clave [" + clave + "]: " + e.getMessage());
                     cerrarRaf(raf);
                 }
+            } else if (actual != null) {
+                System.err.println("Error: la clave del bloque no coincide con la del índice [" + clave + "].");
             }
         }
 
@@ -164,137 +196,150 @@ public class FicheroIndexado {
 
     public Object consultarAleatorio(Comparable clave) {
         Object resultado = null;
-        RandomAccessFile raf = null;
+        long posicion = posicionar(clave);
 
-        if (clave != null && indice.containsKey(clave) && ficheroDatos.exists()) {
-            long posicion = posicionar(clave);
-            if (posicion >= 0) {
-                try {
-                    raf = new RandomAccessFile(ficheroDatos, "r");
-                    raf.seek(posicion);
-                    byte[] bloque = new byte[TAMANO_BLOQUE_DATOS];
-                    raf.readFully(bloque);
-                    raf.close();
+        if (posicion >= 0) {
+            byte[] bloque = leerBloque(posicion);
 
-                    resultado = desempaquetarRegistro(bloque);
-                } catch (IOException e) {
-                    System.err.println("Error en consulta aleatoria para clave [" + clave + "]: " + e.getMessage());
-                    cerrarRaf(raf);
-                }
+            if (bloque != null && bloqueCoincideConClave(bloque, clave)) {
+                resultado = desempaquetarRegistro(bloque);
+            } else if (bloque != null) {
+                System.err.println("Error: la clave del bloque no coincide con la del índice [" + clave + "].");
             }
         }
 
         return resultado;
     }
 
-    public List consultarSecuencial() {
-        List lista = new ArrayList();
-        RandomAccessFile raf = null;
+    public void iniciarRecorridoFisico() {
+        cerrarRecorrido();
 
-        if (!indice.isEmpty() && ficheroDatos.exists()) {
+        if (ficheroDatos != null && ficheroDatos.exists()) {
             try {
-                raf = new RandomAccessFile(ficheroDatos, "r");
-                Iterator it = indice.entrySet().iterator();
-
-                while (it.hasNext()) {
-                    Map.Entry entrada = (Map.Entry) it.next();
-                    Long posicion = (Long) entrada.getValue();
-
-                    raf.seek(posicion.longValue());
-                    byte[] bloque = new byte[TAMANO_BLOQUE_DATOS];
-                    raf.readFully(bloque);
-
-                    Object registro = desempaquetarRegistro(bloque);
-                    if (registro != null) {
-                        lista.add(registro);
-                    }
-                }
-
-                raf.close();
+                recorrido = new RandomAccessFile(ficheroDatos, "r");
+                recorridoOrdenado = false;
+                siguientePosicionFisica = 0;
             } catch (IOException e) {
-                System.err.println("Error en consulta secuencial por clave: " + e.getMessage());
-                cerrarRaf(raf);
+                System.err.println("Error al iniciar el recorrido físico: " + e.getMessage());
+                recorrido = null;
             }
         }
-
-        return lista;
     }
 
-    public List consultarSecuencialFisico() {
-        List lista = new ArrayList();
-        RandomAccessFile raf = null;
+    public Object leerSiguienteFisico() {
+        Object registro = null;
 
-        if (ficheroDatos != null && ficheroDatos.exists() && ficheroDatos.length() > 0) {
+        if (recorrido != null && !recorridoOrdenado) {
             try {
-                raf = new RandomAccessFile(ficheroDatos, "r");
-                long longitudTotal = raf.length();
-                long posicionActual = 0;
+                long longitudTotal = recorrido.length();
 
-                while (posicionActual + TAMANO_BLOQUE_DATOS <= longitudTotal) {
-                    raf.seek(posicionActual);
+                while (registro == null
+                        && siguientePosicionFisica + TAMANO_BLOQUE_DATOS <= longitudTotal) {
+                    recorrido.seek(siguientePosicionFisica);
                     byte[] bloque = new byte[TAMANO_BLOQUE_DATOS];
-                    raf.readFully(bloque);
+                    recorrido.readFully(bloque);
 
-                    Object registro = desempaquetarRegistro(bloque);
-                    if (registro != null) {
-                        lista.add(registro);
-                    }
-                    posicionActual = posicionActual + TAMANO_BLOQUE_DATOS;
+                    siguientePosicionFisica = siguientePosicionFisica + TAMANO_BLOQUE_DATOS;
+                    registro = desempaquetarRegistro(bloque);
                 }
-
-                raf.close();
             } catch (IOException e) {
-                System.err.println("Error en consulta secuencial física: " + e.getMessage());
-                cerrarRaf(raf);
+                System.err.println("Error en el recorrido físico: " + e.getMessage());
+            }
+
+            if (registro == null) {
+                cerrarRecorrido();
             }
         }
 
-        return lista;
+        return registro;
     }
 
-    public List consultarDinamico(Comparable claveInicial, int limite) {
-        List lista = new ArrayList();
-        RandomAccessFile raf = null;
+    public void iniciarRecorridoOrdenado(Comparable claveInicial, int limite) {
+        cerrarRecorrido();
 
-        if (claveInicial != null && limite > 0 && !indice.isEmpty() && ficheroDatos.exists()) {
+        if (ficheroDatos != null && ficheroDatos.exists()) {
             try {
-                SortedMap subMapa = indice.tailMap(claveInicial);
-                raf = new RandomAccessFile(ficheroDatos, "r");
-                Iterator it = subMapa.entrySet().iterator();
-                int contador = 0;
+                recorrido = new RandomAccessFile(ficheroDatos, "r");
+                recorridoOrdenado = true;
 
-                while (it.hasNext() && contador < limite) {
-                    Map.Entry entrada = (Map.Entry) it.next();
-                    Long posicion = (Long) entrada.getValue();
-
-                    raf.seek(posicion.longValue());
-                    byte[] bloque = new byte[TAMANO_BLOQUE_DATOS];
-                    raf.readFully(bloque);
-
-                    Object registro = desempaquetarRegistro(bloque);
-                    if (registro != null) {
-                        lista.add(registro);
-                        contador++;
-                    }
+                if (claveInicial == null) {
+                    siguienteEntrada = 0;
+                } else {
+                    siguienteEntrada = indices.primeraEntradaDesde(claveInicial);
                 }
 
-                raf.close();
+                if (limite > 0) {
+                    entradasRestantes = limite;
+                } else {
+                    entradasRestantes = Long.MAX_VALUE;
+                }
             } catch (IOException e) {
-                System.err.println("Error en consulta dinámica desde clave [" + claveInicial + "]: " + e.getMessage());
-                cerrarRaf(raf);
+                System.err.println("Error al iniciar el recorrido ordenado: " + e.getMessage());
+                recorrido = null;
+            }
+        }
+    }
+
+    public Object leerSiguienteOrdenado() {
+        Object registro = null;
+
+        if (recorrido != null && recorridoOrdenado) {
+            while (registro == null && entradasRestantes > 0) {
+                IndiceRegistro entrada = indices.leerEntrada(siguienteEntrada);
+
+                if (entrada == null) {
+                    entradasRestantes = 0;
+                } else {
+                    siguienteEntrada++;
+
+                    if (!posicionValida(entrada.getPosicion())) {
+                        System.err.println("Error: la posición [" + entrada.getPosicion()
+                                + "] de la clave [" + entrada.getClave() + "] no es válida.");
+                    } else {
+                        try {
+                            recorrido.seek(entrada.getPosicion());
+                            byte[] bloque = new byte[TAMANO_BLOQUE_DATOS];
+                            recorrido.readFully(bloque);
+
+                            if (bloqueCoincideConClave(bloque, entrada.getClave())) {
+                                registro = desempaquetarRegistro(bloque);
+                                if (registro != null) {
+                                    entradasRestantes--;
+                                }
+                            } else {
+                                System.err.println("Error: la clave del bloque no coincide con la del índice ["
+                                        + entrada.getClave() + "].");
+                            }
+                        } catch (IOException e) {
+                            System.err.println("Error en el recorrido ordenado: " + e.getMessage());
+                        }
+                    }
+                }
+            }
+
+            if (registro == null) {
+                cerrarRecorrido();
             }
         }
 
-        return lista;
+        return registro;
+    }
+
+    public void cerrarRecorrido() {
+        cerrarRaf(recorrido);
+        recorrido = null;
     }
 
     public long posicionar(Comparable clave) {
         long posicion = -1;
 
-        if (clave != null && indice.containsKey(clave)) {
-            Long posObj = (Long) indice.get(clave);
-            if (posObj != null) {
-                posicion = posObj.longValue();
+        if (clave != null) {
+            posicion = indices.buscar(clave);
+
+            if (posicion >= 0 && !posicionValida(posicion)) {
+                System.err.println("Error: la posición [" + posicion + "] de la clave ["
+                        + clave + "] no es válida en el fichero de datos.");
+                posicion = -1;
             }
         }
 
@@ -302,11 +347,129 @@ public class FicheroIndexado {
     }
 
     public Set getClaves() {
-        return indice.keySet();
+        TreeSet claves = new TreeSet();
+        long total = indices.numeroEntradas();
+        long i = 0;
+
+        while (i < total) {
+            IndiceRegistro entrada = indices.leerEntrada(i);
+
+            if (entrada != null) {
+                claves.add(entrada.getClave());
+            }
+            i++;
+        }
+
+        return claves;
     }
 
     public long getNumeroRegistros() {
-        return (long) indice.size();
+        return indices.numeroEntradas();
+    }
+
+    private boolean estructuraDatosValida() {
+        boolean valida = ficheroDatos != null && ficheroDatos.length() % TAMANO_BLOQUE_DATOS == 0;
+
+        if (!valida) {
+            System.err.println("Error: el fichero de datos no está formado por bloques de "
+                    + TAMANO_BLOQUE_DATOS + " bytes.");
+        }
+
+        return valida;
+    }
+
+    private boolean posicionValida(long posicion) {
+        return ficheroDatos != null
+                && posicion >= 0
+                && posicion % TAMANO_BLOQUE_DATOS == 0
+                && posicion + TAMANO_BLOQUE_DATOS <= ficheroDatos.length();
+    }
+
+    private byte[] leerBloque(long posicion) {
+        byte[] bloque = null;
+        RandomAccessFile raf = null;
+
+        try {
+            raf = new RandomAccessFile(ficheroDatos, "r");
+            raf.seek(posicion);
+            bloque = new byte[TAMANO_BLOQUE_DATOS];
+            raf.readFully(bloque);
+            raf.close();
+        } catch (IOException e) {
+            System.err.println("Error al leer el bloque de la posición " + posicion + ": " + e.getMessage());
+            cerrarRaf(raf);
+            bloque = null;
+        }
+
+        return bloque;
+    }
+
+    private boolean bloqueActivo(byte[] bloque) {
+        return bloque[0] != 0;
+    }
+
+    private Comparable claveDelBloque(byte[] bloque) {
+        Comparable clave = null;
+
+        try {
+            DataInputStream dis = new DataInputStream(
+                    new ByteArrayInputStream(bloque, 1, bloque.length - 1));
+            clave = leerClaveDeFlujo(dis);
+            dis.close();
+        } catch (IOException e) {
+            clave = null;
+        }
+
+        return clave;
+    }
+
+    private boolean bloqueCoincideConClave(byte[] bloque, Comparable clave) {
+        boolean coincide = false;
+
+        if (clave != null && bloqueActivo(bloque)) {
+            Comparable claveBloque = claveDelBloque(bloque);
+
+            if (claveBloque != null && claveBloque.getClass() == clave.getClass()) {
+                coincide = claveBloque.compareTo(clave) == 0;
+            }
+        }
+
+        return coincide;
+    }
+
+    private void deshacerAlta(long posicion) {
+        RandomAccessFile raf = null;
+
+        System.err.println("Se deshace el alta: se recorta el fichero de datos y se reconstruye el índice.");
+
+        try {
+            raf = new RandomAccessFile(ficheroDatos, "rw");
+            raf.setLength(posicion);
+            raf.close();
+        } catch (IOException e) {
+            System.err.println("No se pudo deshacer el alta en el fichero de datos: " + e.getMessage());
+            cerrarRaf(raf);
+        }
+
+        reconstruirIndice();
+    }
+
+    private void deshacerBaja(long posicion) {
+        RandomAccessFile raf = null;
+
+        System.err.println("Se deshace la baja: se reactiva el registro y se reconstruye el índice.");
+
+        try {
+            raf = new RandomAccessFile(ficheroDatos, "rw");
+            raf.seek(posicion);
+            raf.writeBoolean(true);
+            raf.close();
+        } catch (IOException e) {
+            System.err.println("No se pudo deshacer la baja en el fichero de datos: " + e.getMessage());
+            cerrarRaf(raf);
+        }
+
+        reconstruirIndice();
     }
 
     private byte[] empaquetarRegistro(boolean activo, Comparable clave, Object registro) {
@@ -362,11 +525,12 @@ public class FicheroIndexado {
             boolean activo = dis.readBoolean();
             if (activo) {
 
-                leerClaveDeFlujo(dis);
-
-                ObjectInputStream ois = new ObjectInputStream(dis);
-                registro = ois.readObject();
-                ois.close();
+                // Solo se lee el objeto si la clave de cabecera es correcta
+                if (leerClaveDeFlujo(dis) != null) {
+                    ObjectInputStream ois = new ObjectInputStream(dis);
+                    registro = ois.readObject();
+                    ois.close();
+                }
             }
 
             dis.close();
@@ -380,16 +544,25 @@ public class FicheroIndexado {
         return registro;
     }
 
-    private Comparable leerClaveDeFlujo(DataInputStream dis) throws IOException {
+    /**
+     * Lee la clave (tipo + valor) del flujo. Devuelve null si el tipo no
+     * es válido o si no se puede leer.
+     */
+    private Comparable leerClaveDeFlujo(DataInputStream dis) {
         Comparable clave = null;
-        char tipoClave = dis.readChar();
 
-        if (tipoClave == 'S') {
-            clave = dis.readUTF();
-        } else if (tipoClave == 'I') {
-            clave = new Integer(dis.readInt());
-        } else if (tipoClave == 'L') {
-            clave = new Long(dis.readLong());
+        try {
+            char tipoClave = dis.readChar();
+
+            if (tipoClave == 'S') {
+                clave = dis.readUTF();
+            } else if (tipoClave == 'I') {
+                clave = new Integer(dis.readInt());
+            } else if (tipoClave == 'L') {
+                clave = new Long(dis.readLong());
+            }
+        } catch (IOException e) {
+            clave = null;
         }
 
         return clave;

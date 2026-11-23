@@ -2,8 +2,6 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Iterator;
-import java.util.List;
 
 import Empleado.Empleado;
 import Empleado.Fecha;
@@ -19,7 +17,8 @@ import Empleado.TipoEmpleado;
  *
  * El menú se repite con un do-while mientras la opción no sea 6.
  * Las operaciones con el fichero se hacen a través de GestorEmpleados,
- * que usa el motor genérico del paquete "indexado".
+ * que usa el motor genérico del paquete "indexado". Los listados leen
+ * los empleados de uno en uno, sin cargarlos todos en memoria.
  */
 public class Practica {
 
@@ -110,7 +109,7 @@ public class Practica {
             Sexo sexo = Sexo.fromCodigo(leerLinea("").charAt(0));
 
             System.out.println("Salario: ");
-            float salario = Float.parseFloat(leerLinea("").replace(',', '.'));
+            float salario = Empleado.validarSalario(leerLinea(""));
 
             System.out.println("Fecha de ingreso (dd/mm/aaaa): ");
             Fecha fecha = new Fecha(leerLinea(""));
@@ -207,7 +206,7 @@ public class Practica {
                 System.out.println("Empleado: " + empleado.getNombreApellidos());
                 System.out.println("Salario actual: " + empleado.getSalario());
                 System.out.print("Nuevo salario: ");
-                float nuevoSalario = Float.parseFloat(leerLinea("").replace(',', '.'));
+                float nuevoSalario = Empleado.validarSalario(leerLinea(""));
 
                 if (gestor.modificarSalario(dni, nuevoSalario)) {
                     System.out.println("Salario modificado correctamente");
@@ -223,17 +222,18 @@ public class Practica {
 
     // ---------------------------------------------------------------
     // 4. LISTADO ORDENADO POR DNI
-    // Se recorren las claves del índice (ya ordenadas, porque es un
-    // TreeMap) y se lee cada empleado del fichero de uno en uno con
-    // acceso aleatorio. No se carga una lista con todos los empleados.
+    // El índice está ordenado por DNI: el motor lo recorre entrada a
+    // entrada y nos devuelve cada empleado con siguientePorDni().
+    // Devuelve null cuando no quedan más. No se carga ninguna lista.
     // ---------------------------------------------------------------
     private static void listadoPorDni() {
         System.out.println();
         System.out.println("--- LISTADO DE EMPLEADOS POR DNI ---");
 
-        Iterator claves = gestor.getDnis().iterator();
+        gestor.iniciarListadoPorDni();
+        Empleado empleado = gestor.siguientePorDni();
 
-        if (!claves.hasNext()) {
+        if (empleado == null) {
             System.out.println("No hay empleados en el fichero.");
         } else {
             System.out.println("DNI        NOMBRE Y APELLIDOS              SEXO");
@@ -241,40 +241,43 @@ public class Practica {
 
             int total = 0;
 
-            while (claves.hasNext()) {
-                String dni = (String) claves.next();
-                Empleado empleado = gestor.buscarPorDni(dni);
-
-                if (empleado != null) {
-                    mostrarLinea(empleado);
-                    total++;
-                }
+            while (empleado != null) {
+                mostrarLinea(empleado);
+                total++;
+                empleado = gestor.siguientePorDni();
             }
 
             System.out.println("Total de empleados: " + total);
         }
+
+        gestor.cerrarListado();
     }
 
     // ---------------------------------------------------------------
     // 5. LISTADO POR ORDEN DE ALMACENAMIENTO
-    // El motor recorre FICHENDX.DAT bloque a bloque, saltando las bajas.
+    // El motor recorre FICHENDX.DAT bloque a bloque, saltando las bajas,
+    // y devuelve cada empleado con siguientePorAlmacenamiento().
     // ---------------------------------------------------------------
     /**
      * @author Sergio García de Baya
      */
     private static void listadoPorAlmacenamiento() {
-        List empleados = gestor.listarPorAlmacenamiento();
+        gestor.iniciarListadoPorAlmacenamiento();
+        Empleado empleado = gestor.siguientePorAlmacenamiento();
 
-        if (empleados.isEmpty()) {
+        if (empleado == null) {
             System.out.println("No hay empleados en el fichero.");
         } else {
             System.out.println("DNI        NOMBRE Y APELLIDOS              SEXO");
             System.out.println("---------  ------------------------------  ------");
 
-            for (int i = 0; i < empleados.size(); i++) {
-                mostrarLinea((Empleado) empleados.get(i));
+            while (empleado != null) {
+                mostrarLinea(empleado);
+                empleado = gestor.siguientePorAlmacenamiento();
             }
         }
+
+        gestor.cerrarListado();
         System.out.println("");
     }
 

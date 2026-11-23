@@ -1,7 +1,7 @@
 package Empleado;
 
 /**
- * @author Álvaro López De San Román
+ * @author Equipo 3
  */
 public enum Sexo {
 
@@ -27,13 +27,22 @@ public enum Sexo {
     public static Sexo fromCodigo(char codigo) {
         char mayuscula = Character.toUpperCase(codigo);
 
-        for (int i = 0; i < values().length; i++) {
+        Sexo encontrado = null;
+        int i = 0;
+
+        // Se recorre hasta encontrar el código o acabar los valores
+        while (encontrado == null && i < values().length) {
             if (values()[i].codigo == mayuscula) {
-                return values()[i];
+                encontrado = values()[i];
             }
+            i++;
         }
 
-        throw new IllegalArgumentException(
-                "El sexo debe ser H o M.");
+        if (encontrado == null) {
+            throw new IllegalArgumentException(
+                    "El sexo debe ser H o M.");
+        }
+
+        return encontrado;
     }
 }

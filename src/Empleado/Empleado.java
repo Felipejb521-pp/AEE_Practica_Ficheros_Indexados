@@ -4,7 +4,8 @@ import java.io.Serializable;
 import java.util.Locale;
 
 /**
- * @author Álvaro López De San Román
+ * @author Equipo 3
+ * 
  */
 public class Empleado implements Serializable {
 
@@ -92,11 +93,39 @@ public class Empleado implements Serializable {
                     "El salario debe estar entre 0 y 9999,99.");
         }
 
-        float centimos = salario * 100;
+        float redondeado = Math.round(salario * 100) / 100.0f;
 
-        if (Math.abs(centimos - Math.round(centimos)) > 0.1f) {
+        if (salario != redondeado) {
             throw new IllegalArgumentException(
                     "El salario admite como máximo dos decimales.");
+        }
+    }
+
+    public static float validarSalario(String texto) {
+        if (texto == null) {
+            throw new IllegalArgumentException("Debe indicar el salario.");
+        }
+        texto = texto.trim().replace(',', '.');
+        int separador = -1;
+        for (int i = 0; i < texto.length(); i++) {
+            char caracter = texto.charAt(i);
+            if (caracter == '.' && separador == -1) {
+                separador = i;
+            } else if (caracter < '0' || caracter > '9') {
+                throw new IllegalArgumentException("El salario debe ser un número positivo.");
+            }
+        }
+        if (texto.length() == 0 || separador == 0
+                || separador == texto.length() - 1
+                || (separador >= 0 && texto.length() - separador - 1 > 2)) {
+            throw new IllegalArgumentException("El salario admite como máximo dos decimales.");
+        }
+        try {
+            float salario = Float.parseFloat(texto);
+            validarSalario(salario);
+            return salario;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("El salario no es un número válido.", e);
         }
     }
 
