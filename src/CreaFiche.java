@@ -2,88 +2,58 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.RandomAccessFile;
+
+import Empleado.Empleado;
+import Empleado.EmpleadoDAO;
+import Empleado.Fecha;
+import Empleado.GestorEmpleados;
+import Empleado.Provincia;
+import Empleado.Sexo;
+import Empleado.TipoEmpleado;
 
 /**
  * Aplicación CreaFiche.
  *
  * @author Felipe Jimenez Brioso
- * Crea y llena el fichero indexado FICHENDX.DAT (y su índice INDICE.DAT)
- * con los datos de los empleados introducidos por teclado.
- * El DNI es el campo clave: no puede repetirse.
  *
- * No se guarda ningún empleado en memoria: cada uno se pide, se valida
- * y se graba directamente en el fichero antes de pedir el siguiente.
+ * Crea y llena el fichero indexado FICHENDX.DAT (y su índice INDICE.DAT)
+ * con los datos del fichero directo FICHE.DAT, añadiendo el campo DNI,
+ * que es el campo clave y se introduce por teclado.
+ *
+ * FICHE.DAT es el fichero de empleados de la práctica anterior y debe
+ * estar en la carpeta Ficheros. Formato de cada registro (74 bytes):
+ *
+ *   Campo                 Tipo        Bytes
+ *   Activo                boolean       1
+ *   Nombre y apellidos    30 char      60
+ *   Sexo (H/M)            char          2
+ *   Salario               float         4
+ *   Año de ingreso        short         2
+ *   Mes de ingreso        byte          1
+ *   Día de ingreso        byte          1
+ *   Tipo (C/F/D)          char          2
+ *   Provincia (1-8)       byte          1
+ *
+ * Es el mismo orden que FICHENDX.DAT (EmpleadoDAO) pero sin el DNI.
+ * Si vuestro FICHE.DAT es distinto, solo hay que cambiar LONGITUD_FICHE
+ * y el bloque de lecturas de main.
+ *
+ * No se cargan los empleados en memoria: se lee un registro de FICHE.DAT,
+ * se pide su DNI y se graba en FICHENDX.DAT antes de leer el siguiente.
  */
 public class CreaFiche {
+
+    private static final int LONGITUD_FICHE = 74;
+
+    private static final File ORIGEN = new File("Ficheros", "FICHE.DAT");
+    private static final File DATOS = new File("Ficheros", "FICHENDX.DAT");
+    private static final File INDICE = new File("Ficheros", "INDICE.DAT");
 
     private static BufferedReader teclado
             = new BufferedReader(new InputStreamReader(System.in));
 
-    public static void main(String[] args) {
-        File datos = new File("Ficheros", "FICHENDX.DAT");
-        File indice = new File("Ficheros", "INDICE.DAT");
-
-        // Si el fichero ya existe, se puede empezar de cero o añadir al final
-        if (datos.exists()) {
-            String respuesta = leerSiNo(
-                    "FICHENDX.DAT ya existe. ¿Desea borrarlo y empezar de cero? (S/N): ");
-
-            if (respuesta.equals("S")) {
-                datos.delete();
-                indice.delete();
-                System.out.println("Fichero borrado. Se creará uno nuevo.");
-            } else {
-                System.out.println("Los nuevos empleados se añadirán al fichero.");
-            }
-        }
-
-        GestorEmpleados gestor = null;
-
-        try {
-            gestor = new GestorEmpleados(datos, indice);
-        } catch (IOException e) {
-            System.out.println("No se puede abrir el fichero: " + e.getMessage());
-        }
-
-        if (gestor != null) {
-            int grabados = 0;
-            String otro;
-
-            do {
-                System.out.println();
-                System.out.println("--- NUEVO EMPLEADO ---");
-
-                String dni = leerDni(gestor);
-                String nombre = leerNombre();
-                Sexo sexo = leerSexo();
-                float salario = leerSalario();
-                Fecha fechaIngreso = leerFechaIngreso();
-                TipoEmpleado tipo = leerTipo();
-                Provincia provincia = leerProvincia();
-
-                try {
-                    Empleado empleado = new Empleado(dni, nombre, sexo,
-                            salario, fechaIngreso, tipo, provincia);
-
-                    gestor.altaEmpleado(empleado);
-                    grabados++;
-                    System.out.println("Grabado: " + empleado);
-
-                } catch (IllegalArgumentException e) {
-                    System.out.println("Datos incorrectos: " + e.getMessage());
-                } catch (IOException e) {
-                    System.out.println("Error al grabar: " + e.getMessage());
-                }
-
-                otro = leerSiNo("¿Desea introducir otro empleado? (S/N): ");
-            } while (otro.equals("S"));
-
-            System.out.println();
-            System.out.println("Empleados grabados en esta sesión: " + grabados);
-        }
-    }
-  
-    
+    /** Muestra el mensaje y devuelve la línea tecleada (sin espacios). */
     private static String leerLinea(String mensaje) {
         String linea = "";
         System.out.print(mensaje);
@@ -112,11 +82,42 @@ public class CreaFiche {
         return respuesta;
     }
 
-    // ---------------------------------------------------------------
-    // Lectura y validación de cada campo
-    // ---------------------------------------------------------------
+    /**
+     * Comprueba que FICHE.DAT existe y tiene registros completos, y que
+     * no se va a mezclar con un FICHENDX.DAT anterior.
+     * Devuelve true si se puede empezar a crear el fichero indexado.
+     */
+    private static boolean comprobarFicheros() {
+        boolean correcto = true;
 
-    /** DNI: 8 cifras + letra correcta, y que no exista ya en el fichero. */
+        if (!ORIGEN.exists()) {
+            System.out.println("No existe " + ORIGEN.getPath()
+                    + ". Copie ahí el FICHE.DAT de la práctica anterior.");
+            correcto = false;
+        } else if (ORIGEN.length() % LONGITUD_FICHE != 0) {
+            System.out.println("FICHE.DAT no tiene registros de "
+                    + LONGITUD_FICHE + " bytes. Revise el formato.");
+            correcto = false;
+        } else if (DATOS.exists()) {
+            String respuesta = leerSiNo(
+                    "FICHENDX.DAT ya existe. ¿Desea borrarlo y crearlo de nuevo? (S/N): ");
+
+            if (respuesta.equals("S")) {
+                DATOS.delete();
+                INDICE.delete();
+            } else {
+                System.out.println("Proceso cancelado.");
+                correcto = false;
+            }
+        }
+
+        return correcto;
+    }
+
+    /**
+     * Pide el DNI hasta que sea válido (8 cifras y letra correcta)
+     * y no esté ya grabado en FICHENDX.DAT.
+     */
     private static String leerDni(GestorEmpleados gestor) {
         String dni = null;
         boolean correcto;
@@ -142,140 +143,71 @@ public class CreaFiche {
         return dni;
     }
 
-    /**
-     * Nombre y apellidos: máximo 30 caracteres y al menos un apellido.
-     * Como leerLinea ya quita los espacios del principio y del final,
-     * si queda algún espacio es que hay nombre y, como mínimo, un apellido.
-     */
-    private static String leerNombre() {
-        String nombre;
-        boolean correcto;
+    // ---------------------------------------------------------------
+    // MAIN: recorre FICHE.DAT de principio a fin.
+    // ---------------------------------------------------------------
+    public static void main(String[] args) {
+        if (comprobarFicheros()) {
+            int grabados = 0;
+            int omitidos = 0;
 
-        do {
-            correcto = false;
-            nombre = leerLinea("Nombre y apellidos (máx. 30): ");
+            try (RandomAccessFile fiche = new RandomAccessFile(ORIGEN, "r")) {
+                GestorEmpleados gestor = new GestorEmpleados(DATOS, INDICE);
+                long numeroRegistros = fiche.length() / LONGITUD_FICHE;
 
-            if (nombre.indexOf(' ') == -1) {
-                System.out.println("Debe escribir el nombre y al menos un apellido.");
-            } else if (nombre.length() > 30) {
-                System.out.println("No puede tener más de 30 caracteres.");
-            } else {
-                correcto = true;
-            }
-        } while (!correcto);
+                for (long i = 0; i < numeroRegistros; i++) {
+                    fiche.seek(i * LONGITUD_FICHE);
 
-        return nombre;
-    }
+                    boolean activo = fiche.readBoolean();
+                    String nombre = EmpleadoDAO.leerTexto(fiche, 30);
+                    char sexo = fiche.readChar();
+                    float salario = fiche.readFloat();
+                    short anio = fiche.readShort();
+                    byte mes = fiche.readByte();
+                    byte dia = fiche.readByte();
+                    char tipo = fiche.readChar();
+                    byte provincia = fiche.readByte();
 
-    /** Sexo: H o M. */
-    private static Sexo leerSexo() {
-        Sexo sexo = null;
+                    if (!activo) {
+                        // Los empleados dados de baja en FICHE.DAT no se pasan
+                        omitidos++;
+                    } else {
+                        System.out.println();
+                        System.out.println("Empleado " + (i + 1) + " de "
+                                + numeroRegistros + ": " + nombre);
 
-        do {
-            String texto = leerLinea("Sexo (H/M): ");
+                        try {
+                            // Se crean primero los datos de FICHE.DAT para
+                            // no pedir el DNI de un registro incorrecto.
+                            Fecha fecha = new Fecha(dia, mes, anio);
+                            Sexo s = Sexo.fromCodigo(sexo);
+                            TipoEmpleado t = TipoEmpleado.fromCodigo(tipo);
+                            Provincia p = Provincia.fromCodigo(provincia);
 
-            if (texto.length() != 1) {
-                System.out.println("Escriba una sola letra: H o M.");
-            } else {
-                try {
-                    sexo = Sexo.fromCodigo(texto.charAt(0));
-                } catch (IllegalArgumentException e) {
-                    System.out.println(e.getMessage());
+                            String dni = leerDni(gestor);
+
+                            Empleado empleado = new Empleado(dni, nombre,
+                                    s, salario, fecha, t, p);
+
+                            gestor.altaEmpleado(empleado);
+                            grabados++;
+                            System.out.println("Grabado: " + empleado);
+
+                        } catch (IllegalArgumentException e) {
+                            omitidos++;
+                            System.out.println("Registro con datos incorrectos ("
+                                    + e.getMessage() + "). No se graba.");
+                        }
+                    }
                 }
+
+            } catch (IOException e) {
+                System.out.println("Error de entrada/salida: " + e.getMessage());
             }
-        } while (sexo == null);
 
-        return sexo;
-    }
-
-    /** Salario: de 0 a 9999,99 con dos decimales como máximo. */
-    private static float leerSalario() {
-        float salario = 0;
-        boolean correcto = false;
-
-        do {
-            String texto = leerLinea("Salario (0 - 9999,99): ").replace(',', '.');
-
-            try {
-                salario = Float.parseFloat(texto);
-                Empleado.validarSalario(salario);
-                correcto = true;
-            } catch (NumberFormatException e) {
-                System.out.println("Debe escribir un número.");
-            } catch (IllegalArgumentException e) {
-                System.out.println(e.getMessage());
-            }
-        } while (!correcto);
-
-        return salario;
-    }
-
-    /**
-     * Fecha de ingreso en formato dd/mm/aaaa (también vale d/m/aaaa).
-     * El constructor Fecha(String) de la clase Fecha ya comprueba el
-     * formato y que el día exista en ese mes (años bisiestos incluidos);
-     * si algo falla lanza IllegalArgumentException con el motivo.
-     * Aquí solo añadimos que no sea una fecha futura, igual que Empleado.
-     */
-    private static Fecha leerFechaIngreso() {
-        Fecha fecha = null;
-
-        do {
-            try {
-                fecha = new Fecha(leerLinea("Fecha de ingreso (dd/mm/aaaa): "));
-
-                if (fecha.esPosteriorA(Fecha.hoy())) {
-                    System.out.println("La fecha de ingreso no puede ser futura.");
-                    fecha = null;
-                }
-            } catch (IllegalArgumentException e) {
-                System.out.println(e.getMessage());
-            }
-        } while (fecha == null);
-
-        return fecha;
-    }
-
-    /** Tipo de empleado: C (a comisión), F (fijo) o D (a domicilio). */
-    private static TipoEmpleado leerTipo() {
-        TipoEmpleado tipo = null;
-
-        do {
-            String texto = leerLinea(
-                    "Tipo (C = A comisión, F = Fijos, D = A domicilio): ");
-
-            if (texto.length() != 1) {
-                System.out.println("Escriba una sola letra: C, F o D.");
-            } else {
-                try {
-                    tipo = TipoEmpleado.fromCodigo(texto.charAt(0));
-                } catch (IllegalArgumentException e) {
-                    System.out.println(e.getMessage());
-                }
-            }
-        } while (tipo == null);
-
-        return tipo;
-    }
-
-    /** Provincia: número de 1 a 8. */
-    private static Provincia leerProvincia() {
-        Provincia provincia = null;
-
-        System.out.println("Provincias: 1 Almería, 2 Cádiz, 3 Córdoba, 4 Granada,");
-        System.out.println("            5 Huelva, 6 Jaén, 7 Málaga, 8 Sevilla");
-
-        do {
-            try {
-                byte codigo = Byte.parseByte(leerLinea("Provincia (1-8): "));
-                provincia = Provincia.fromCodigo(codigo);
-            } catch (NumberFormatException e) {
-                System.out.println("Debe escribir un número del 1 al 8.");
-            } catch (IllegalArgumentException e) {
-                System.out.println(e.getMessage());
-            }
-        } while (provincia == null);
-
-        return provincia;
+            System.out.println();
+            System.out.println("Empleados grabados en FICHENDX.DAT: " + grabados);
+            System.out.println("Registros no pasados: " + omitidos);
+        }
     }
 }

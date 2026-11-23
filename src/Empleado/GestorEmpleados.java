@@ -1,6 +1,9 @@
+package Empleado;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import FicheIndx.FicheroIndexado;
 
 /**
  * @author Álvaro López De San Román

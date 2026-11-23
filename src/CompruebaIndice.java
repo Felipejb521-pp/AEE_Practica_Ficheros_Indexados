@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.TreeMap;
 
+import FicheIndx.IndiceDAO;
+
 /**
  * @author Álvaro López De San Román
  */

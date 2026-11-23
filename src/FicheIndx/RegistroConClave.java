@@ -1,3 +1,5 @@
+package FicheIndx;
+
 /**
  * @author Álvaro López De San Román
  */

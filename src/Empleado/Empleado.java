@@ -1,4 +1,7 @@
+package Empleado;
+
 import java.util.Locale;
+import FicheIndx.RegistroConClave;
 
 /**
  * @author Álvaro López De San Román

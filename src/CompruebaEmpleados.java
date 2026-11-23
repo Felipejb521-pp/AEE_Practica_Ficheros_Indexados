@@ -3,6 +3,9 @@ import java.io.EOFException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
+import Empleado.Empleado;
+import Empleado.EmpleadoDAO;
+
 /**
  * @author Álvaro López De San Román
  */

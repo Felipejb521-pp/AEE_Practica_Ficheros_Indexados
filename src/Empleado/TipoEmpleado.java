@@ -1,3 +1,5 @@
+package Empleado;
+
 /**
  * @author Álvaro López De San Román
  */

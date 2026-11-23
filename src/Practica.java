@@ -5,6 +5,11 @@ import java.io.InputStreamReader;
 import java.util.Iterator;
 import java.util.TreeMap;
 
+import Empleado.Empleado;
+import Empleado.EmpleadoDAO;
+import Empleado.GestorEmpleados;
+import FicheIndx.IndiceDAO;
+
 /**
  * Aplicación Practica: mantenimiento del fichero indexado FICHENDX.DAT.
  *
