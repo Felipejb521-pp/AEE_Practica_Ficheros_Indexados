@@ -1,12 +1,15 @@
 package Empleado;
 
+import java.io.Serializable;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 
 /**
  * @author Álvaro López De San Román
  */
-public class Fecha {
+public class Fecha implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private static final int ANIO_MINIMO = 1900;
     private static final int ANIO_MAXIMO = 9999;

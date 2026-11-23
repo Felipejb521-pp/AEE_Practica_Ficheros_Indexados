@@ -5,7 +5,6 @@ import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
 
 import Empleado.Empleado;
-import Empleado.EmpleadoDAO;
 import Empleado.Fecha;
 import Empleado.GestorEmpleados;
 import Empleado.Provincia;
@@ -35,12 +34,15 @@ import Empleado.TipoEmpleado;
  *   Tipo (C/F/D)          char          2
  *   Provincia (1-8)       byte          1
  *
- * Es el mismo orden que FICHENDX.DAT (EmpleadoDAO) pero sin el DNI.
+ * Son los mismos campos que la clase Empleado, en ese orden, sin el DNI.
  * Si vuestro FICHE.DAT es distinto, solo hay que cambiar LONGITUD_FICHE
  * y el bloque de lecturas de main.
  *
  * No se cargan los empleados en memoria: se lee un registro de FICHE.DAT,
  * se pide su DNI y se graba en FICHENDX.DAT antes de leer el siguiente.
+ *
+ * FICHENDX.DAT e INDICE.DAT los gestiona el paquete genérico "indexado"
+ * (FicheroIndexado) a través de GestorEmpleados.
  */
 public class CreaFiche {
 
@@ -135,8 +137,6 @@ public class CreaFiche {
                 }
             } catch (IllegalArgumentException e) {
                 System.out.println(e.getMessage());
-            } catch (IOException e) {
-                System.out.println("Error al buscar el DNI: " + e.getMessage());
             }
         } while (!correcto);
 
@@ -159,7 +159,15 @@ public class CreaFiche {
                     fiche.seek(i * LONGITUD_FICHE);
 
                     boolean activo = fiche.readBoolean();
-                    String nombre = EmpleadoDAO.leerTexto(fiche, 30);
+
+                    // Nombre: 30 caracteres escritos con writeChar,
+                    // rellenos con espacios que quitamos con trim()
+                    StringBuilder texto = new StringBuilder();
+                    for (int c = 0; c < 30; c++) {
+                        texto.append(fiche.readChar());
+                    }
+                    String nombre = texto.toString().trim();
+
                     char sexo = fiche.readChar();
                     float salario = fiche.readFloat();
                     short anio = fiche.readShort();
@@ -189,9 +197,13 @@ public class CreaFiche {
                             Empleado empleado = new Empleado(dni, nombre,
                                     s, salario, fecha, t, p);
 
-                            gestor.altaEmpleado(empleado);
-                            grabados++;
-                            System.out.println("Grabado: " + empleado);
+                            if (gestor.altaEmpleado(empleado)) {
+                                grabados++;
+                                System.out.println("Grabado: " + empleado);
+                            } else {
+                                omitidos++;
+                                System.out.println("No se ha podido grabar.");
+                            }
 
                         } catch (IllegalArgumentException e) {
                             omitidos++;

@@ -1,12 +1,14 @@
 package Empleado;
 
+import java.io.Serializable;
 import java.util.Locale;
-import FicheIndx.RegistroConClave;
 
 /**
  * @author Álvaro López De San Román
  */
-public class Empleado implements RegistroConClave<String> {
+public class Empleado implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private String dni;
     private String nombreApellidos;
@@ -96,11 +98,6 @@ public class Empleado implements RegistroConClave<String> {
             throw new IllegalArgumentException(
                     "El salario admite como máximo dos decimales.");
         }
-    }
-
-    @Override
-    public String getClave() {
-        return this.dni;
     }
 
     public String getDni() {
